@@ -311,7 +311,12 @@ today = date.today()
 this_month = today.strftime("%Y-%m")
 all_months = sorted(set(df.month) | {this_month}) if not df.empty else [this_month]
 
-st.title("₹ Expense Monitor")
+h1, h2 = st.columns([5, 1], vertical_alignment="center")
+h1.title("₹ Expense Monitor")
+if h2.button("🔒 Logout", key="logout_btn", width="stretch"):
+    for k in list(st.session_state.keys()):
+        del st.session_state[k]
+    st.rerun()
 PAGES = ["➕ Add", "📒 Day book", "📊 Reports", "📄 Word file", "⚙️ Settings"]
 page = st.pills("Menu", PAGES, selection_mode="single", key="nav", default=PAGES[0], label_visibility="collapsed") or PAGES[0]
 
