@@ -523,6 +523,7 @@ elif page == "📊 Reports":
         total_row.index = ["total"]
         piv = pd.concat([total_row, piv])          # total spent sits on top, just under the month names
         piv.index = [LAB.get(k, "Total spent") for k in piv.index]
+        piv = piv[["Monthly avg"] + sorted([c for c in piv.columns if c != "Monthly avg"], reverse=True)]   # newest month first
         piv.columns = [mlabel(x) if x != "Monthly avg" else x for x in piv.columns]
         styled = (piv.astype(int).style
                   .format(lambda v: inr(v)[1:])
