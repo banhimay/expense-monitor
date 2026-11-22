@@ -184,9 +184,48 @@ CSS = """<style>
 .kpi .l{font-size:.72rem;text-transform:uppercase;letter-spacing:.06em;opacity:.7;font-weight:600}
 .kpi .v{font-size:1.25rem;font-weight:600;font-variant-numeric:tabular-nums}
 .kpi .s{font-size:.8rem;opacity:.7}
+.kx{display:none}
+label.kpi{cursor:pointer;display:block;margin:0;transition:border-color .15s}
+label.kpi:hover{border-color:rgba(128,128,128,.6)}
+label.kpi .l::after{content:" ▾";opacity:.6}
+.kpanel{display:none;border:1px solid rgba(128,128,128,.3);border-radius:10px;padding:10px 14px;margin:-4px 0 12px}
+.kpanel .kh{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;font-weight:600;margin-bottom:6px}
+.kpanel .kh small{font-weight:400;opacity:.7}
+.kpanel table{width:100%;border-collapse:collapse;font-size:.88rem}
+.kpanel td{padding:5px 6px;border-top:1px solid rgba(128,128,128,.2);vertical-align:top}
+.kpanel td.a{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.kpanel td.d{white-space:nowrap;opacity:.75}
+.kpanel td.h{opacity:.7;font-size:.8rem}
 .dayhead{display:flex;justify-content:space-between;font-weight:600;font-size:.85rem;opacity:.8;border-bottom:1px solid rgba(128,128,128,.3);margin-top:10px}
 </style>"""
 st.markdown(CSS, unsafe_allow_html=True)
+
+
+def kpis_expandable(items, uid):
+    """Tiles that open a list of their entries when tapped. items: (label, value, sub, entries_df or None).
+    Pure CSS (hidden checkboxes) so it works without page reloads; tap the tile again to close."""
+    import html as h
+    boxes, tiles, panels, css = [], [], [], []
+    for i, (l, v, s, ent) in enumerate(items):
+        if ent is None:
+            tiles.append(f'<div class="kpi"><div class="l">{l}</div><div class="v">{v}</div><div class="s">{s}</div></div>')
+            continue
+        tid = f"kx-{uid}-{i}"
+        boxes.append(f'<input type="checkbox" class="kx" id="{tid}">')
+        tiles.append(f'<label class="kpi" for="{tid}"><div class="l">{l}</div><div class="v">{v}</div><div class="s">{s}</div></label>')
+        show_head = ent["cat"].nunique() > 1
+        rows = "".join(
+            f'<tr><td class="d">{r.d:%d %b}</td><td>{h.escape(r.note or LAB.get(r.cat, r.cat))}'
+            + (f'<br><span class="h">{h.escape(LAB.get(r.cat, r.cat))}</span>' if show_head else "")
+            + f'</td><td class="a">{inr(r.amount)}</td></tr>'
+            for r in ent.sort_values(["d", "amount"], ascending=[True, False]).itertuples())
+        body = rows or '<tr><td>No entries this month.</td></tr>'
+        panels.append(f'<div class="kpanel" id="p-{tid}"><div class="kh"><span>{l} — {inr(ent.amount.sum())}</span>'
+                      f'<small>{len(ent)} entries · tap the tile again to close</small></div><table>{body}</table></div>')
+        css.append(f'#{tid}:checked ~ #p-{tid}{{display:block}} #{tid}:checked ~ .kpi-grid label[for="{tid}"]'
+                   f'{{border-color:#a2482a;box-shadow:0 0 0 1px #a2482a inset}}')
+    st.markdown(f'<style>{"".join(css)}</style><div>{"".join(boxes)}<div class="kpi-grid">{"".join(tiles)}</div>{"".join(panels)}</div>',
+                unsafe_allow_html=True)
 
 
 def kpis(items):
@@ -452,12 +491,14 @@ elif page == "📊 Reports":
         hh = mdf[mdf.cat == "home"].amount.sum()
         phh = pdf[pdf.cat == "home"].amount.sum()
         pct = lambda v: f"{v / spent * 100:.0f}% of spend" if spent else ""
-        kpis([("Total spent", inr(spent), (f"{'+' if spent >= pspent else '−'}{inr(abs(spent - pspent))} vs {mlabel(pm)}" if pspent else "")),
-              ("Children's education", inr(edu), pct(edu)),
-              ("Household expenses", inr(hh), pct(hh) + (f" · {mlabel(pm)[:3]} {inr(phh)}" if phh else "")),
-              ("Loans & EMIs", inr(emi), pct(emi)),
-              ("Everything else", inr(spent - edu - emi - hh), ""),
-              ("Card bills (not counted)", inr(mdf[~mdf.cat.isin(CK)].amount.sum()), "")])
+        rest = mdf[mdf.cat.isin(CK) & ~mdf.cat.isin(["edu", "home", "emi"])]
+        kpis_expandable([
+            ("Total spent", inr(spent), (f"{'+' if spent >= pspent else '−'}{inr(abs(spent - pspent))} vs {mlabel(pm)}" if pspent else ""), None),
+            ("Children's education", inr(edu), pct(edu), mdf[mdf.cat == "edu"]),
+            ("Household expenses", inr(hh), pct(hh) + (f" · {mlabel(pm)[:3]} {inr(phh)}" if phh else ""), mdf[mdf.cat == "home"]),
+            ("Loans & EMIs", inr(emi), pct(emi), mdf[mdf.cat == "emi"]),
+            ("Everything else", inr(spent - edu - emi - hh), pct(spent - edu - emi - hh), rest),
+            ("Card bills (not counted)", inr(mdf[~mdf.cat.isin(CK)].amount.sum()), "", mdf[~mdf.cat.isin(CK)])], uid=m)
         g = mdf[mdf.cat.isin(CK)].groupby("cat").amount.sum().sort_values(ascending=False)
         if not g.empty:
             tbl = pd.DataFrame({"Head": [LAB.get(k, k) for k in g.index], "Amount ₹": g.values,
