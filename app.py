@@ -449,10 +449,14 @@ elif page == "📊 Reports":
         pspent = pdf[pdf.cat.isin(CK)].amount.sum()
         edu = mdf[mdf.cat == "edu"].amount.sum()
         emi = mdf[mdf.cat == "emi"].amount.sum()
+        hh = mdf[mdf.cat == "home"].amount.sum()
+        phh = pdf[pdf.cat == "home"].amount.sum()
+        pct = lambda v: f"{v / spent * 100:.0f}% of spend" if spent else ""
         kpis([("Total spent", inr(spent), (f"{'+' if spent >= pspent else '−'}{inr(abs(spent - pspent))} vs {mlabel(pm)}" if pspent else "")),
-              ("Children's education", inr(edu), f"{edu / spent * 100:.0f}% of spend" if spent else ""),
-              ("Loans & EMIs", inr(emi), ""),
-              ("Everything else", inr(spent - edu - emi), ""),
+              ("Children's education", inr(edu), pct(edu)),
+              ("Household expenses", inr(hh), pct(hh) + (f" · {mlabel(pm)[:3]} {inr(phh)}" if phh else "")),
+              ("Loans & EMIs", inr(emi), pct(emi)),
+              ("Everything else", inr(spent - edu - emi - hh), ""),
               ("Card bills (not counted)", inr(mdf[~mdf.cat.isin(CK)].amount.sum()), "")])
         g = mdf[mdf.cat.isin(CK)].groupby("cat").amount.sum().sort_values(ascending=False)
         if not g.empty:
@@ -472,10 +476,15 @@ elif page == "📊 Reports":
         piv = c.pivot_table(index="cat", columns="month", values="amount", aggfunc="sum", fill_value=0)
         piv = piv.reindex([k for k in cats.key if k in piv.index])
         piv["Monthly avg"] = piv.mean(axis=1).round(0)
-        piv.loc["total"] = piv.sum()
+        total_row = piv.sum().to_frame().T
+        total_row.index = ["total"]
+        piv = pd.concat([total_row, piv])          # total spent sits on top, just under the month names
         piv.index = [LAB.get(k, "Total spent") for k in piv.index]
         piv.columns = [mlabel(x) if x != "Monthly avg" else x for x in piv.columns]
-        st.dataframe(piv.astype(int), width="stretch")
+        styled = (piv.astype(int).style
+                  .format(lambda v: inr(v)[1:])
+                  .apply(lambda r: ["font-weight: bold; background-color: rgba(128,128,128,.12)" if r.name == "Total spent" else "" for _ in r], axis=1))
+        st.dataframe(styled, width="stretch")
         chart = c.pivot_table(index="month", columns="cat", values="amount", aggfunc="sum", fill_value=0)
         chart.columns = [LAB.get(k, k) for k in chart.columns]
         chart.index = [mlabel(i) for i in chart.index]
