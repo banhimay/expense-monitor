@@ -356,6 +356,9 @@ if h2.button("🔒 Logout", key="logout_btn", width="stretch"):
     for k in list(st.session_state.keys()):
         del st.session_state[k]
     st.rerun()
+if not df.empty:
+    h2.markdown(f"<div style='text-align:center;font-size:.8rem;opacity:.75;margin-top:2px'>Updated up to "
+                f"<b>{df.d.max():%d %b %Y}</b></div>", unsafe_allow_html=True)
 PAGES = ["➕ Add", "📒 Day book", "📊 Reports", "📄 Word file", "⚙️ Settings"]
 page = st.pills("Menu", PAGES, selection_mode="single", key="nav", default=PAGES[0], label_visibility="collapsed") or PAGES[0]
 
@@ -372,8 +375,7 @@ if page == "➕ Add":
     spent = mdf[mdf.cat.isin(CK)].amount.sum() if not mdf.empty else 0
     tdf = mdf[mdf.d.dt.date == today] if not mdf.empty else mdf
     kpis([("Today", inr(tdf[tdf.cat.isin(CK)].amount.sum() if not tdf.empty else 0), f"{len(tdf)} entries"),
-          (f"{MONTHS[today.month - 1]} so far", inr(spent), f"{len(mdf)} entries"),
-          ("Children's education", inr(mdf[mdf.cat == 'edu'].amount.sum() if not mdf.empty else 0), "this month")])
+          (f"{MONTHS[today.month - 1]} so far", inr(spent), f"{len(mdf)} entries")])
 
     # fixed monthly items
     prev_m = (today.replace(day=1) - timedelta(days=1)).strftime("%Y-%m")
