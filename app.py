@@ -30,6 +30,7 @@ st.set_page_config(page_title="Expense Monitor", page_icon="₹", layout="wide",
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
 PASSWORD = os.environ.get("EXPENSE_PASSWORD", "admin")
+PASSWORD_HINT = os.environ.get("PASSWORD_HINT", "")      # set in Render > Environment; kept out of the code
 SQLITE_FILE = os.environ.get("SQLITE_FILE", "expenses.db")
 SEED_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "seed_sep_oct_2026.json")
 
@@ -63,6 +64,12 @@ def check_password():
                 st.session_state["authenticated"] = True
                 st.rerun()
             st.error("Incorrect password.")
+    with st.expander("Forgot password?"):
+        if PASSWORD_HINT:
+            st.markdown(f"**Hint:** {PASSWORD_HINT}")
+        else:
+            st.caption("No hint has been set yet.")
+        st.caption("To change the password: Render dashboard → expense-monitor → Environment → EXPENSE_PASSWORD.")
     return False
 
 
@@ -113,6 +120,14 @@ def db_init():
                 for m in seed.values() for e in m["entries"]]
         run("INSERT INTO expenses (d, amount, cat, note, fixed, created_at) VALUES (%s,%s,%s,%s,%s,%s)",
             rows, many=True)
+    # Assets: one row per month, items kept as a JSON list (same shape as the old Asset Monitor)
+    run("""CREATE TABLE IF NOT EXISTS asset_months (
+        month TEXT PRIMARY KEY, as_on DATE NOT NULL, items TEXT NOT NULL, updated_at TEXT)""")
+    seed_assets = os.environ.get("ASSET_SEED_FILE", "")          # local testing only
+    if seed_assets and os.path.exists(seed_assets) and not run("SELECT COUNT(*) FROM asset_months", fetch=True)[0][0]:
+        for m, v in json.load(open(seed_assets, encoding="utf-8")).items():
+            run("INSERT INTO asset_months (month, as_on, items, updated_at) VALUES (%s,%s,%s,%s)",
+                (m, v["asOn"], json.dumps(v["items"], ensure_ascii=False), "seed"))
     return True
 
 
@@ -359,7 +374,7 @@ if h2.button("🔒 Logout", key="logout_btn", width="stretch"):
 if not df.empty:
     h2.markdown(f"<div style='text-align:center;font-size:.8rem;opacity:.75;margin-top:2px'>Updated up to "
                 f"<b>{df.d.max():%d %b %Y}</b></div>", unsafe_allow_html=True)
-PAGES = ["➕ Add", "📒 Day book", "📊 Reports", "📄 Word file", "⚙️ Settings"]
+PAGES = ["➕ Add", "📒 Day book", "📊 Reports", "📄 Word file", "💰 Assets", "⚙️ Settings"]
 page = st.pills("Menu", PAGES, selection_mode="single", key="nav", default=PAGES[0], label_visibility="collapsed") or PAGES[0]
 
 
@@ -585,6 +600,11 @@ elif page == "📄 Word file":
                 txt = "NIL" if dd.empty else " ".join((f"{x.note} {x.amount}/-" if x.cat in CK else f"({x.note} {x.amount}/-)") for x in dd.itertuples())
                 lines.append(f"**{day}/{mm}/{str(y)[2:]}** - {txt}")
             st.markdown("  \n".join(lines))
+
+# ---- ASSETS ----
+elif page == "💰 Assets":
+    import assets_page
+    assets_page.render(run, inr, kpis, mlabel, IS_MOBILE)
 
 # ---- SETTINGS ----
 elif page == "⚙️ Settings":
