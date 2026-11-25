@@ -11,6 +11,7 @@ from io import BytesIO
 
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 
 CATS = [  # key, label, group
     ("cash", "Cash in hand", "liquid"), ("bank", "Bank savings", "liquid"), ("fd", "Fixed deposits", "liquid"),
@@ -111,6 +112,68 @@ def save(run, m, as_on, items):
         (m, as_on.isoformat(), json.dumps(items, ensure_ascii=False), datetime.now().isoformat(timespec="seconds")))
 
 
+def headwise_html(data):
+    """Month-wise, head-wise table: frozen Head column, click a head to see its items."""
+    ms = sorted(data, reverse=True)
+    labels = [f"{MONTHS[int(m[5:]) - 1][:3]} \u2019{m[2:4]}" for m in ms]
+    def val(m, k, name=None):
+        v = [int(x.get("value") or 0) for x in data[m]["items"] if x["cat"] == k and (name is None or x["name"] == name)]
+        return sum(v) if v else None
+    heads = []
+    for k, lbl, _ in CATS:
+        names = []
+        for m in sorted(data):
+            for x in data[m]["items"]:
+                if x["cat"] == k and x["name"] not in names:
+                    names.append(x["name"])
+        if not names:
+            continue
+        heads.append([k, lbl.replace(" (surrender value)", ""), [val(m, k) or 0 for m in ms],
+                      [[n, [val(m, k, n) for m in ms]] for n in names] if len(names) > 1 else []])
+    payload = json.dumps({"m": labels, "h": heads}, ensure_ascii=False)
+    n_rows = len(heads) + 3
+    html = """
+<style>
+body{margin:0;font-family:"Source Sans Pro",sans-serif;color:#31333f}
+.w{overflow:auto;max-height:%(maxh)dpx;border:1px solid #e6e6e6;border-radius:8px}
+table{border-collapse:separate;border-spacing:0;font-size:14px;font-variant-numeric:tabular-nums;min-width:100%%}
+td,th{padding:7px 12px;text-align:right;white-space:nowrap;border-bottom:1px solid #eee;background:#fff}
+th{position:sticky;top:0;z-index:2;font-weight:600;color:#666;border-bottom:1px solid #ccc}
+.h{position:sticky;left:0;z-index:1;text-align:left;min-width:190px;border-right:1px solid #ccc}
+th.h{z-index:3}
+tr.tot td{background:#f0f0f0;font-weight:700}
+tr.loan td{background:#fbd9d9;color:#a32d2d;font-weight:700}
+tr.loan.sub td{font-weight:400}
+tr.net td{background:#d6f0d8;color:#1d6b2e;font-weight:700}
+tr.hd{cursor:pointer}tr.hd:hover td{background:#f7f7f7}tr.loan.hd:hover td{background:#f6cccc}
+tr.sub td{font-size:12.5px;color:#666;padding:4px 12px}tr.sub td.h{padding-left:30px}
+tr.loan.sub td{color:#a32d2d}
+.ar{display:inline-block;width:14px;color:#888}
+</style>
+<div class="w"><table><thead><tr id="hr"><th class="h">Head</th></tr></thead><tbody id="tb"></tbody></table></div>
+<script>
+const D=%(payload)s;
+const f=v=>v==null?"\u2013":Number(v).toLocaleString("en-IN");
+const hr=document.getElementById("hr"),tb=document.getElementById("tb");
+D.m.forEach(m=>{const th=document.createElement("th");th.textContent=m;hr.appendChild(th)});
+function row(label,vals,cls,arrow){const tr=document.createElement("tr");tr.className=cls||"";
+let h='<td class="h">'+(arrow?'<span class="ar">\u25B8</span>':'')+label+'</td>';vals.forEach(v=>h+='<td>'+f(v)+'</td>');
+tr.innerHTML=h;tb.appendChild(tr);return tr}
+const assets=D.h.filter(h=>h[0]!=="loan"),loan=D.h.find(h=>h[0]==="loan");
+const tot=D.m.map((_,i)=>assets.reduce((s,h)=>s+h[2][i],0));
+row("Total assets",tot,"tot");
+function block(h,extra){const has=h[3].length>0;const r=row(h[1],h[2],(extra||"")+(has?" hd":""),has);
+const subs=h[3].map(s=>{const t=row(s[0],s[1],(extra||"")+" sub");t.style.display="none";return t});
+if(has)r.onclick=()=>{const a=r.querySelector(".ar"),open=a.textContent==="\u25BE";subs.forEach(t=>t.style.display=open?"none":"table-row");a.textContent=open?"\u25B8":"\u25BE"}}
+assets.forEach(h=>block(h));
+const lv=loan?loan[2]:D.m.map(()=>0);
+if(loan)block(loan,"loan");
+row("Net worth",D.m.map((_,i)=>tot[i]-lv[i]),"net");
+</script>
+""" % {"payload": payload, "maxh": 560}
+    return html, min(n_rows * 37 + 50, 580)
+
+
 def render(run, inr, kpis, mlabel, IS_MOBILE):
     data = load(run)
     months = sorted(data)
@@ -142,6 +205,10 @@ def render(run, inr, kpis, mlabel, IS_MOBILE):
 
     # ---------- Overview ----------
     with tab1:
+        st.markdown("**Month-wise, head-wise breakup** · tap a head with ▸ to see its items")
+        _html, _h = headwise_html(data)
+        components.html(_html, height=_h, scrolling=False)
+
         segs = [(lbl, t["grp"].get(g, 0)) for g, lbl in GROUPS if t["grp"].get(g, 0) > 0]
         alloc = pd.DataFrame({"Where the money sits": [s[0] for s in segs], "Amount ₹": [s[1] for s in segs],
                               "Share %": [round(s[1] / t["assets"] * 100, 1) for s in segs]}).sort_values("Amount ₹", ascending=False)
